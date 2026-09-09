@@ -15,7 +15,7 @@ using System.Xml.Linq;
 
 namespace LaunchDeck {
 static class Updater {
-    public const string Version="1.1.0";
+    public const string Version="1.1.1";
     const string Api="https://api.github.com/repos/rubricalchip134/LaunchDeck/releases/latest";
     public static bool IsNewer(string tag) {
         System.Version current, latest;
@@ -179,6 +179,11 @@ public class MainForm : Form {
     [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct SHFILEINFO { public IntPtr hIcon;public int iIcon;public uint dwAttributes;[MarshalAs(UnmanagedType.ByValTStr,SizeConst=260)] public string szDisplayName;[MarshalAs(UnmanagedType.ByValTStr,SizeConst=80)] public string szTypeName; }
     [DllImport("shell32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SHGetFileInfo(string path,uint attr,out SHFILEINFO info,uint size,uint flags);
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
+    [StructLayout(LayoutKind.Sequential)] struct SIZE { public int cx,cy;public SIZE(int width,int height){cx=width;cy=height;} }
+    [Flags] enum SIIGBF { ResizeToFit=0, BiggerSizeOk=1, IconOnly=4 }
+    [ComImport,Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IShellItemImageFactory { void GetImage(SIZE size,SIIGBF flags,out IntPtr bitmap); }
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode,PreserveSig=false)] static extern void SHCreateItemFromParsingName(string path,IntPtr bindContext,ref Guid riid,[MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory item);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr handle);
     public MainForm(string dataFile) {
         store=new DeckStore(dataFile);Text="LaunchDeck";ClientSize=new Size(1060,810);MinimumSize=new Size(850,730);StartPosition=FormStartPosition.CenterScreen;BackColor=Theme.Background;ForeColor=Theme.Ink;Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;
         Icon=SystemIcons.Application;
@@ -221,7 +226,11 @@ public class MainForm : Form {
     }
     void Launch(int slot){if(store.Items[slot]==null)return;try{Process.Start(LaunchInfo(store.Items[slot]));SetStatus("Opened "+store.Items[slot].Name+".");}catch(Exception ex){MessageBox.Show(this,ex.Message,"Couldn't launch app",MessageBoxButtons.OK,MessageBoxIcon.Information);}}
     void Persist(string message){RefreshTiles();try{if(!canSave)throw new IOException("Saved deck needs repair. Changes cannot be saved this session.");store.Save();SetStatus(message);}catch(Exception ex){SetStatus("Changes are not saved.");MessageBox.Show(this,ex.Message,"Could not save deck");}}
-    void RefreshTiles(){for(int i=0;i<15;i++){var t=tiles[i];if(t.AppIcon!=null){t.AppIcon.Dispose();t.AppIcon=null;}t.Entry=store.Items[i];t.AccessibleName=t.Entry==null?"Empty slot "+(i+1)+", add app":t.Entry.Name+", launch app";tips.SetToolTip(t,t.Entry==null?"Drop an app or click to choose one":t.Entry.Path);if(t.Entry!=null){SHFILEINFO info;if(SHGetFileInfo(t.Entry.Path,0,out info,(uint)Marshal.SizeOf(typeof(SHFILEINFO)),0x100)!=IntPtr.Zero && info.hIcon!=IntPtr.Zero){try{using(var icon=Icon.FromHandle(info.hIcon))t.AppIcon=icon.ToBitmap();}finally{DestroyIcon(info.hIcon);}}else t.AppIcon=SystemIcons.Application.ToBitmap();}t.Invalidate();}count.Text=store.Items.Count(x=>x!=null)+" / 15 apps";}
+    public static Image EntryIcon(Entry entry){
+        if(entry.Path.StartsWith("appx:",StringComparison.OrdinalIgnoreCase)){IntPtr bitmap=IntPtr.Zero;try{var id=new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");IShellItemImageFactory factory;SHCreateItemFromParsingName("shell:AppsFolder\\"+entry.Path.Substring(5),IntPtr.Zero,ref id,out factory);factory.GetImage(new SIZE(96,96),SIIGBF.BiggerSizeOk|SIIGBF.IconOnly,out bitmap);using(var image=Image.FromHbitmap(bitmap))return new Bitmap(image);}catch{return null;}finally{if(bitmap!=IntPtr.Zero)DeleteObject(bitmap);}}
+        SHFILEINFO info;if(SHGetFileInfo(entry.Path,0,out info,(uint)Marshal.SizeOf(typeof(SHFILEINFO)),0x100)!=IntPtr.Zero&&info.hIcon!=IntPtr.Zero){try{using(var icon=Icon.FromHandle(info.hIcon))return icon.ToBitmap();}finally{DestroyIcon(info.hIcon);}}return null;
+    }
+    void RefreshTiles(){for(int i=0;i<15;i++){var t=tiles[i];if(t.AppIcon!=null){t.AppIcon.Dispose();t.AppIcon=null;}t.Entry=store.Items[i];t.AccessibleName=t.Entry==null?"Empty slot "+(i+1)+", add app":t.Entry.Name+", launch app";tips.SetToolTip(t,t.Entry==null?"Drop an app or click to choose one":t.Entry.Path);if(t.Entry!=null)t.AppIcon=EntryIcon(t.Entry)??SystemIcons.Application.ToBitmap();t.Invalidate();}count.Text=store.Items.Count(x=>x!=null)+" / 15 apps";}
     protected override void Dispose(bool disposing){if(disposing)tips.Dispose();base.Dispose(disposing);}
 }
 static class Program {
@@ -237,9 +246,10 @@ static class Program {
         Directory.CreateDirectory(directory);string path=System.IO.Path.Combine(directory,"test-deck.xml");
         try{
             var s=new DeckStore(path);string exe=Application.ExecutablePath;
-            if(!Updater.IsNewer("v1.1.1")||Updater.IsNewer("v1.1.0")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
+            if(!Updater.IsNewer("v1.1.2")||Updater.IsNewer("v1.1.1")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
             var appx=MainForm.LaunchInfo(new Entry("Store app","appx:Example.Package!App"));if(appx.FileName!="explorer.exe"||!appx.Arguments.Contains("Example.Package!App"))throw new Exception("Store app launch configuration failed");
-            if(AppCatalog.Load().Length==0)throw new Exception("Installed app discovery failed");
+            var installed=AppCatalog.Load();if(installed.Length==0)throw new Exception("Installed app discovery failed");
+            if(MainForm.EntryIcon(new Entry(installed[0].Name,"appx:"+installed[0].Id))==null)throw new Exception("Registered app icon loading failed");
             if(s.AddFiles(new[]{exe,exe},0)!=2)throw new Exception("Multi-file add failed");
             s.Swap(0,14);s.Items[14].Name="Example & app";s.Save();var loaded=new DeckStore(path);loaded.Load();
             if(loaded.Items[0]!=null||loaded.Items[14].Name!="Example & app"||loaded.Items[1].Path!=exe)throw new Exception("Persistence/reorder failed");

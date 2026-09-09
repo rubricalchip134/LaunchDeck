@@ -2,7 +2,9 @@
 
 A native Windows launcher with a 15-button, Stream Deck-style grid. Drag `.exe`
 files and shortcuts onto tiles, click to launch them, and drag tiles to rearrange
-the layout.
+the layout. The app browser searches desktop and Microsoft Store apps registered
+with Windows, recommends commonly used installed apps, and puts their Windows
+supplied artwork on the deck.
 
 ## Download
 
