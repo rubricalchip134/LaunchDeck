@@ -15,7 +15,7 @@ using System.Xml.Linq;
 
 namespace LaunchDeck {
 static class Updater {
-    public const string Version="1.1.2";
+    public const string Version="1.2.0";
     const string Api="https://api.github.com/repos/rubricalchip134/LaunchDeck/releases/latest";
     public static bool IsNewer(string tag) {
         System.Version current, latest;
@@ -112,11 +112,20 @@ public class DeckStore {
     }
 }
 static class Theme {
-    public static Color Background=Color.FromArgb(17,20,25), Card=Color.FromArgb(29,34,41), Border=Color.FromArgb(49,57,66), Ink=Color.FromArgb(239,243,246), Muted=Color.FromArgb(157,170,182), Accent=Color.FromArgb(176,241,118);
+    public static Color Background=Color.FromArgb(10,14,20), Card=Color.FromArgb(20,27,36), CardHover=Color.FromArgb(27,38,49), Border=Color.FromArgb(42,55,70), Ink=Color.FromArgb(245,248,251), Muted=Color.FromArgb(148,163,181), Accent=Color.FromArgb(126,240,190), Blue=Color.FromArgb(111,161,255);
     public static GraphicsPath Round(Rectangle r, int radius) {
         int d=radius*2; var p=new GraphicsPath(); p.AddArc(r.X,r.Y,d,d,180,90); p.AddArc(r.Right-d,r.Y,d,d,270,90); p.AddArc(r.Right-d,r.Bottom-d,d,d,0,90); p.AddArc(r.X,r.Bottom-d,d,d,90,90); p.CloseFigure(); return p;
     }
-    public static Button Button(string text) { return new Button { Text=text, FlatStyle=FlatStyle.Flat, BackColor=Card, ForeColor=Ink, Height=38, Cursor=Cursors.Hand, Font=new Font("Segoe UI",10), AutoSize=false }; }
+    public static Button Button(string text) { return new SoftButton { Text=text, BackColor=Card, ForeColor=Ink, Height=38, Cursor=Cursors.Hand, Font=new Font("Segoe UI Semibold",9.5f), AutoSize=false }; }
+}
+class SoftButton : Button {
+    bool hover,pressed;
+    public SoftButton(){FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);MouseEnter+=(s,e)=>{hover=true;Invalidate();};MouseLeave+=(s,e)=>{hover=false;pressed=false;Invalidate();};MouseDown+=(s,e)=>{pressed=true;Invalidate();};MouseUp+=(s,e)=>{pressed=false;Invalidate();};}
+    protected override void OnPaint(PaintEventArgs e){var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;var r=new Rectangle(1,1,Width-3,Height-3);Color fill=pressed?ControlPaint.Dark(BackColor,.12f):hover?ControlPaint.Light(BackColor,.08f):BackColor;using(var p=Theme.Round(r,10))using(var b=new SolidBrush(fill))using(var pen=new Pen(BackColor==Theme.Accent?Theme.Accent:Theme.Border)){g.FillPath(b,p);g.DrawPath(pen,p);}var textRect=TextAlign==ContentAlignment.MiddleLeft?new Rectangle(14,1,Width-28,Height-3):r;var flags=(TextAlign==ContentAlignment.MiddleLeft?TextFormatFlags.Left:TextFormatFlags.HorizontalCenter)|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis;TextRenderer.DrawText(g,Text,Font,textRect,ForeColor,flags);}
+}
+class BrandPanel : Panel {
+    public BrandPanel(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);}
+    protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;var r=new Rectangle(0,0,Width-1,Height-1);using(var p=Theme.Round(r,18))using(var brush=new LinearGradientBrush(r,Color.FromArgb(24,38,51),Color.FromArgb(14,25,34),12f))using(var pen=new Pen(Color.FromArgb(52,72,88))){g.FillPath(brush,p);g.DrawPath(pen,p);}using(var glow=new SolidBrush(Color.FromArgb(34,Theme.Accent)))g.FillEllipse(glow,Width-190,-120,300,300);}
 }
 class Tile : Button {
     public int Slot; public Entry Entry; public Image AppIcon;
@@ -137,15 +146,16 @@ class Tile : Button {
     protected override void OnPaint(PaintEventArgs e) {
         var g=e.Graphics; g.SmoothingMode=SmoothingMode.AntiAlias;
         var r=new Rectangle(2,2,Width-5,Height-5);
-        using(var p=Theme.Round(r,14)) using(var b=new SolidBrush(hover||drop?Color.FromArgb(38,47,53):Theme.Card)) using(var pen=new Pen(drop||Focused?Theme.Accent:Theme.Border,drop||Focused?2:1)) {g.FillPath(b,p);g.DrawPath(pen,p);}
-        using(var f=new Font("Segoe UI",9)) TextRenderer.DrawText(g,(Slot+1).ToString("00"),f,new Point(14,12),Theme.Muted);
+        using(var shadow=Theme.Round(new Rectangle(r.X+2,r.Y+4,r.Width,r.Height),16))using(var sb=new SolidBrush(Color.FromArgb(55,0,0,0)))g.FillPath(sb,shadow);
+        using(var p=Theme.Round(r,16)) using(var b=new SolidBrush(hover||drop?Theme.CardHover:Theme.Card)) using(var pen=new Pen(drop||Focused?Theme.Accent:Theme.Border,drop||Focused?2:1)) {g.FillPath(b,p);g.DrawPath(pen,p);}
+        var chip=new Rectangle(13,12,31,21);using(var p=Theme.Round(chip,7))using(var b=new SolidBrush(Color.FromArgb(35,Theme.Blue)))g.FillPath(b,p);using(var f=new Font("Segoe UI Semibold",8)) TextRenderer.DrawText(g,(Slot+1).ToString("00"),f,chip,Color.FromArgb(177,201,255),TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);
         if(Entry==null) {
-            using(var pen=new Pen(hover?Theme.Accent:Theme.Muted,2)) {int x=Width/2,y=Height/2-10;g.DrawLine(pen,x-10,y,x+10,y);g.DrawLine(pen,x,y-10,x,y+10);}
-            using(var f=new Font("Segoe UI",10)) TextRenderer.DrawText(g,"Drop an app",f,new Rectangle(8,Height-44,Width-16,26),Theme.Muted,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);
+            int x=Width/2,y=Height/2-8;using(var b=new SolidBrush(Color.FromArgb(24,Theme.Accent)))g.FillEllipse(b,x-25,y-25,50,50);using(var pen=new Pen(hover?Theme.Accent:Theme.Muted,2)) {g.DrawLine(pen,x-9,y,x+9,y);g.DrawLine(pen,x,y-9,x,y+9);}
+            using(var f=new Font("Segoe UI Semibold",10)) TextRenderer.DrawText(g,"ADD APP",f,new Rectangle(8,Height-48,Width-16,24),hover?Theme.Accent:Theme.Muted,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);
         } else {
-            int size=Math.Min(48,Height-75);
-            if(AppIcon!=null) g.DrawImage(AppIcon,(Width-size)/2,Math.Max(25,(Height-size)/2-12),size,size);
-            using(var f=new Font("Segoe UI Semibold",11)) TextRenderer.DrawText(g,Entry.Name,f,new Rectangle(10,Height-43,Width-20,28),Theme.Ink,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
+            int size=Math.Min(58,Height-82);int iy=Math.Max(35,(Height-size)/2-15);if(AppIcon!=null)g.DrawImage(AppIcon,(Width-size)/2,iy,size,size);
+            using(var f=new Font("Segoe UI Semibold",10.5f)) TextRenderer.DrawText(g,Entry.Name,f,new Rectangle(12,Height-55,Width-24,25),Theme.Ink,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
+            using(var f=new Font("Segoe UI",8.5f)) TextRenderer.DrawText(g,hover?"OPEN  →":"READY",f,new Rectangle(12,Height-31,Width-24,18),hover?Theme.Accent:Theme.Muted,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);
         }
     }
     protected override void Dispose(bool disposing) {if(disposing && AppIcon!=null)AppIcon.Dispose();base.Dispose(disposing);}
@@ -192,30 +202,31 @@ public class MainForm : Form {
     [DllImport("shell32.dll",CharSet=CharSet.Unicode,PreserveSig=false)] static extern void SHCreateItemFromParsingName(string path,IntPtr bindContext,ref Guid riid,[MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory item);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr handle);
     public MainForm(string dataFile) {
-        store=new DeckStore(dataFile);Text="LaunchDeck";ClientSize=new Size(1060,810);MinimumSize=new Size(850,730);StartPosition=FormStartPosition.CenterScreen;BackColor=Theme.Background;ForeColor=Theme.Ink;Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;
+        store=new DeckStore(dataFile);Text="LaunchDeck";ClientSize=new Size(1120,860);MinimumSize=new Size(900,760);StartPosition=FormStartPosition.CenterScreen;BackColor=Theme.Background;ForeColor=Theme.Ink;Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;
         Icon=SystemIcons.Application;
-        var root=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(28,20,28,16),ColumnCount=1,RowCount=5};
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute,84));root.RowStyles.Add(new RowStyle(SizeType.Absolute,42));root.RowStyles.Add(new RowStyle(SizeType.Percent,100));root.RowStyles.Add(new RowStyle(SizeType.Absolute,141));root.RowStyles.Add(new RowStyle(SizeType.Absolute,28));Controls.Add(root);
-        var header=new Panel{Dock=DockStyle.Fill};root.Controls.Add(header,0,0);
-        header.Controls.Add(new Label{Text="LAUNCHDECK",Font=new Font("Segoe UI",21,FontStyle.Bold),Location=new Point(0,0),AutoSize=true});
-        header.Controls.Add(new Label{Text="Your apps. One click away.",ForeColor=Theme.Muted,Location=new Point(2,44),AutoSize=true});
-        var add=Theme.Button("+  Browse apps");add.Size=new Size(134,40);add.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(add);add.Location=new Point(header.ClientSize.Width-134,10);add.Click+=(s,e)=>BrowseApps();
-        var file=Theme.Button("Choose file");file.Size=new Size(112,40);file.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(file);file.Location=new Point(header.ClientSize.Width-258,10);file.Click+=(s,e)=>{int i=EmptySlot();if(i>=0)Edit(i);};
-        var update=Theme.Button("Updates");update.Size=new Size(94,40);update.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(update);update.Location=new Point(header.ClientSize.Width-364,10);update.Click+=(s,e)=>Updater.Check(this,SetStatus,true);
-        var version=new Label{Text="v"+Updater.Version,ForeColor=Theme.Muted,AutoSize=true};version.Location=new Point(222,11);header.Controls.Add(version);
-        var sub=new Panel{Dock=DockStyle.Fill};root.Controls.Add(sub,0,1);sub.Controls.Add(new Label{Text="MY DECK",Font=new Font("Segoe UI",10,FontStyle.Bold),AutoSize=true,Location=new Point(0,7)});count.ForeColor=Theme.Muted;count.AutoSize=true;count.Location=new Point(105,7);sub.Controls.Add(count);
+        var root=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(24,20,24,14),ColumnCount=1,RowCount=5,BackColor=Theme.Background};
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute,120));root.RowStyles.Add(new RowStyle(SizeType.Absolute,50));root.RowStyles.Add(new RowStyle(SizeType.Percent,100));root.RowStyles.Add(new RowStyle(SizeType.Absolute,154));root.RowStyles.Add(new RowStyle(SizeType.Absolute,34));Controls.Add(root);
+        var header=new BrandPanel{Dock=DockStyle.Fill,Margin=new Padding(0,0,0,10)};root.Controls.Add(header,0,0);
+        var mark=new Label{Text="L",TextAlign=ContentAlignment.MiddleCenter,Font=new Font("Segoe UI Black",19,FontStyle.Bold),ForeColor=Theme.Background,BackColor=Theme.Accent,Location=new Point(20,22),Size=new Size(52,52)};header.Controls.Add(mark);
+        header.Controls.Add(new Label{Text="LAUNCHDECK",Font=new Font("Segoe UI",20,FontStyle.Bold),Location=new Point(88,21),AutoSize=true,BackColor=Color.Transparent});
+        header.Controls.Add(new Label{Text="Everything you use, ready in one place",ForeColor=Theme.Muted,Location=new Point(90,58),AutoSize=true,BackColor=Color.Transparent});
+        var add=Theme.Button("+  BROWSE APPS");add.Size=new Size(144,42);add.Anchor=AnchorStyles.Top|AnchorStyles.Right;add.BackColor=Theme.Accent;add.ForeColor=Theme.Background;header.Controls.Add(add);add.Location=new Point(header.ClientSize.Width-164,27);add.Click+=(s,e)=>BrowseApps();
+        var file=Theme.Button("CHOOSE FILE");file.Size=new Size(122,42);file.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(file);file.Location=new Point(header.ClientSize.Width-298,27);file.Click+=(s,e)=>{int i=EmptySlot();if(i>=0)Edit(i);};
+        var update=Theme.Button("UPDATES");update.Size=new Size(102,42);update.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(update);update.Location=new Point(header.ClientSize.Width-412,27);update.Click+=(s,e)=>Updater.Check(this,SetStatus,true);
+        var version=new Label{Text="v"+Updater.Version,ForeColor=Theme.Muted,AutoSize=true,BackColor=Color.Transparent};version.Location=new Point(275,28);header.Controls.Add(version);
+        var sub=new Panel{Dock=DockStyle.Fill,BackColor=Theme.Background};root.Controls.Add(sub,0,1);sub.Controls.Add(new Label{Text="MY DECK",Font=new Font("Segoe UI Semibold",12,FontStyle.Bold),AutoSize=true,Location=new Point(2,13)});count.ForeColor=Theme.Muted;count.AutoSize=true;count.Location=new Point(112,16);sub.Controls.Add(count);var hint=new Label{Text="Drag tiles to rearrange",ForeColor=Theme.Muted,AutoSize=false,Dock=DockStyle.Right,Width=180,TextAlign=ContentAlignment.MiddleRight,Padding=new Padding(0,0,12,0)};sub.Controls.Add(hint);
         grid.Dock=DockStyle.Fill;grid.ColumnCount=5;grid.RowCount=3;grid.Margin=Padding.Empty;
         for(int i=0;i<5;i++)grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,20));for(int i=0;i<3;i++)grid.RowStyles.Add(new RowStyle(SizeType.Percent,100));root.Controls.Add(grid,0,2);
-        for(int i=0;i<15;i++) {int slot=i;var tile=new Tile(i){Dock=DockStyle.Fill,Margin=new Padding(0,0,10,10)};tiles[i]=tile;grid.Controls.Add(tile,i%5,i/5);tile.Click+=(s,e)=>{if(store.Items[slot]==null)Edit(slot);else Launch(slot);};tile.MoveTile=(a,b)=>{store.Swap(a,b);Persist("Tiles rearranged.");};tile.DropFiles=(at,files)=>{int n=store.AddFiles(files,at);Persist(n==0?"No empty tiles available. Remove an app to make space.":n+" app(s) added. Click a tile to launch.");};
+        for(int i=0;i<15;i++) {int slot=i;var tile=new Tile(i){Dock=DockStyle.Fill,Margin=new Padding(0,0,12,12)};tiles[i]=tile;grid.Controls.Add(tile,i%5,i/5);tile.Click+=(s,e)=>{if(store.Items[slot]==null)Edit(slot);else Launch(slot);};tile.MoveTile=(a,b)=>{store.Swap(a,b);Persist("Tiles rearranged.");};tile.DropFiles=(at,files)=>{int n=store.AddFiles(files,at);Persist(n==0?"No empty tiles available. Remove an app to make space.":n+" app(s) added. Click a tile to launch.");};
             var menu=new ContextMenuStrip();menu.Items.Add("Launch",null,(s,e)=>Launch(slot));menu.Items.Add("Edit / choose app",null,(s,e)=>Edit(slot));menu.Items.Add("Remove from deck",null,(s,e)=>{store.Items[slot]=null;Persist("Tile cleared. Your app is still installed.");});tile.ContextMenuStrip=menu;
         }
-        var discovery=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=2,Margin=new Padding(0,9,0,0)};
+        var discovery=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=2,Margin=new Padding(0,8,0,0),BackColor=Theme.Background};
         for(int i=0;i<3;i++)discovery.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.333f));discovery.RowStyles.Add(new RowStyle(SizeType.Absolute,33));discovery.RowStyles.Add(new RowStyle(SizeType.Percent,100));root.Controls.Add(discovery,0,3);
-        var discoverTitle=new Label{Text="DISCOVER APPS   /   Official download pages · not paid ads",ForeColor=Theme.Muted,Dock=DockStyle.Fill,AutoSize=true};discovery.Controls.Add(discoverTitle,0,0);discovery.SetColumnSpan(discoverTitle,3);
+        var discoverTitle=new Label{Text="DISCOVER   ·   Curated tools from official publishers",Font=new Font("Segoe UI Semibold",10),ForeColor=Theme.Muted,Dock=DockStyle.Fill,AutoSize=true};discovery.Controls.Add(discoverTitle,0,0);discovery.SetColumnSpan(discoverTitle,3);
         Discover(discovery,0,"PowerToys","Windows productivity tools","https://learn.microsoft.com/en-us/windows/powertoys/install");
         Discover(discovery,1,"OBS Studio","Recording & streaming","https://obsproject.com/download");
         Discover(discovery,2,"Find installed apps","Open Windows apps folder","shell:AppsFolder");
-        status.Dock=DockStyle.Fill;status.ForeColor=Theme.Muted;status.Font=new Font("Segoe UI",9);status.TextAlign=ContentAlignment.MiddleLeft;root.Controls.Add(status,0,4);
+        status.Dock=DockStyle.Fill;status.ForeColor=Theme.Muted;status.Font=new Font("Segoe UI",9);status.TextAlign=ContentAlignment.MiddleLeft;status.Padding=new Padding(3,0,0,0);root.Controls.Add(status,0,4);
         try{store.Load();}catch(Exception ex){canSave=false;Shown+=(s,e)=>MessageBox.Show(this,"Could not read your saved deck. It will not be overwritten. Restore the .bak file or move the damaged file and restart.\n\n"+store.FileName+"\n\n"+ex.Message,"Saved deck needs attention");}
         RefreshTiles();SetStatus("Drag desktop apps or shortcuts into tiles. Drag tiles to rearrange. Right-click to edit.");Shown+=(s,e)=>Updater.Check(this,SetStatus,false);
     }
@@ -253,7 +264,7 @@ static class Program {
         Directory.CreateDirectory(directory);string path=System.IO.Path.Combine(directory,"test-deck.xml");
         try{
             var s=new DeckStore(path);string exe=Application.ExecutablePath;
-            if(!Updater.IsNewer("v1.1.3")||Updater.IsNewer("v1.1.2")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
+            if(!Updater.IsNewer("v1.2.1")||Updater.IsNewer("v1.2.0")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
             var installer=Updater.InstallInfo("C:\\Temp Folder\\next.exe","C:\\My Apps\\LaunchDeck.exe",123);if(installer.FileName!="powershell.exe"||installer.UseShellExecute||!installer.Arguments.Contains("-EncodedCommand"))throw new Exception("Update helper configuration failed");
             var appx=MainForm.LaunchInfo(new Entry("Store app","appx:Example.Package!App"));if(appx.FileName!="explorer.exe"||!appx.Arguments.Contains("Example.Package!App"))throw new Exception("Store app launch configuration failed");
             var installed=AppCatalog.Load();if(installed.Length==0)throw new Exception("Installed app discovery failed");
