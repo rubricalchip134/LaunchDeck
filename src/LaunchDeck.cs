@@ -15,7 +15,7 @@ using System.Xml.Linq;
 
 namespace LaunchDeck {
 static class Updater {
-    public const string Version="1.1.1";
+    public const string Version="1.1.2";
     const string Api="https://api.github.com/repos/rubricalchip134/LaunchDeck/releases/latest";
     public static bool IsNewer(string tag) {
         System.Version current, latest;
@@ -41,9 +41,16 @@ static class Updater {
                 using(var client=new WebClient()){client.Headers.Add("User-Agent","LaunchDeck/"+Version);client.DownloadFile(exeUrl,next);client.DownloadFile(hashUrl,hashFile);}
                 string expected=File.ReadAllText(hashFile).Trim().Split(new[]{' ','\t'},StringSplitOptions.RemoveEmptyEntries)[0].ToLowerInvariant();
                 if(expected.Length!=64||Hash(next)!=expected){File.Delete(next);throw new IOException("The downloaded update did not pass its security check.");}
-                owner.BeginInvoke((Action)(()=>{status("LaunchDeck "+tag+" is ready.");if(MessageBox.Show(owner,"LaunchDeck "+tag+" is available.\n\nUpdate now? Your deck will stay saved.","Update ready",MessageBoxButtons.YesNo,MessageBoxIcon.Information)==DialogResult.Yes){Process.Start(new ProcessStartInfo(next,"--apply-update \""+Application.ExecutablePath+"\" "+Process.GetCurrentProcess().Id){UseShellExecute=true});owner.Close();}}));
+                owner.BeginInvoke((Action)(()=>{status("LaunchDeck "+tag+" is ready.");if(MessageBox.Show(owner,"LaunchDeck "+tag+" is available.\n\nUpdate now? Your deck will stay saved.","Update ready",MessageBoxButtons.YesNo,MessageBoxIcon.Information)==DialogResult.Yes){try{Process.Start(InstallInfo(next,Application.ExecutablePath,Process.GetCurrentProcess().Id));owner.Close();}catch(Exception installError){status("Windows blocked the automatic update.");MessageBox.Show(owner,"Windows could not start the update helper. LaunchDeck is still safe to use.\n\n"+installError.Message+"\n\nDownload the latest release manually, or move LaunchDeck to your Documents folder and retry.","Update blocked",MessageBoxButtons.OK,MessageBoxIcon.Information);}}}));
             } catch(Exception ex) { owner.BeginInvoke((Action)(()=>status(userRequested?"Update check failed: "+ex.Message:"Could not check for updates. Use Check for updates to retry."))); }
         });
+    }
+    static string Ps(string value){return "'"+value.Replace("'","''")+"'";}
+    public static ProcessStartInfo InstallInfo(string next,string target,int pid){
+        string log=Path.Combine(Path.GetDirectoryName(next),"update-error.txt");
+        string script="$ErrorActionPreference='Stop';try{Wait-Process -Id "+pid+" -Timeout 30 -ErrorAction SilentlyContinue;Copy-Item -LiteralPath "+Ps(next)+" -Destination "+Ps(target)+" -Force;Start-Process -FilePath "+Ps(target)+"}catch{($_|Out-String)|Set-Content -LiteralPath "+Ps(log)+";Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show('LaunchDeck could not finish updating. Open the latest release from GitHub or move LaunchDeck to your Documents folder and retry.','Update blocked')|Out-Null}";
+        string encoded=Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        return new ProcessStartInfo("powershell.exe","-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand "+encoded){UseShellExecute=false,CreateNoWindow=true};
     }
     public static int Apply(string target, int pid) {
         try { try{Process.GetProcessById(pid).WaitForExit(30000);}catch(ArgumentException){} File.Copy(Application.ExecutablePath,target,true);Process.Start(new ProcessStartInfo(target){UseShellExecute=true});return 0; }
@@ -246,7 +253,8 @@ static class Program {
         Directory.CreateDirectory(directory);string path=System.IO.Path.Combine(directory,"test-deck.xml");
         try{
             var s=new DeckStore(path);string exe=Application.ExecutablePath;
-            if(!Updater.IsNewer("v1.1.2")||Updater.IsNewer("v1.1.1")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
+            if(!Updater.IsNewer("v1.1.3")||Updater.IsNewer("v1.1.2")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
+            var installer=Updater.InstallInfo("C:\\Temp Folder\\next.exe","C:\\My Apps\\LaunchDeck.exe",123);if(installer.FileName!="powershell.exe"||installer.UseShellExecute||!installer.Arguments.Contains("-EncodedCommand"))throw new Exception("Update helper configuration failed");
             var appx=MainForm.LaunchInfo(new Entry("Store app","appx:Example.Package!App"));if(appx.FileName!="explorer.exe"||!appx.Arguments.Contains("Example.Package!App"))throw new Exception("Store app launch configuration failed");
             var installed=AppCatalog.Load();if(installed.Length==0)throw new Exception("Installed app discovery failed");
             if(MainForm.EntryIcon(new Entry(installed[0].Name,"appx:"+installed[0].Id))==null)throw new Exception("Registered app icon loading failed");
