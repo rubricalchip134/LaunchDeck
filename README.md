@@ -6,6 +6,10 @@ the layout. The app browser searches desktop and Microsoft Store apps registered
 with Windows, recommends commonly used installed apps, and puts their Windows
 supplied artwork on the deck.
 
+Version 2 adds Ctrl+K quick launch, number-key shortcuts, website tiles, deck
+backup and restore, always-on-top mode, Windows startup control, a saved-data
+shortcut, and a categorized discovery gallery linking to official publishers.
+
 ## Download
 
 Download `LaunchDeck.exe` from the [latest release](https://github.com/rubricalchip134/LaunchDeck/releases/latest).
