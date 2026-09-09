@@ -15,7 +15,7 @@ using System.Xml.Linq;
 
 namespace LaunchDeck {
 static class Updater {
-    public const string Version="1.0.0";
+    public const string Version="1.1.0";
     const string Api="https://api.github.com/repos/rubricalchip134/LaunchDeck/releases/latest";
     public static bool IsNewer(string tag) {
         System.Version current, latest;
@@ -53,6 +53,20 @@ static class Updater {
 public class Entry {
     public string Name, Path;
     public Entry(string name, string path) { Name = name; Path = path; }
+}
+public class InstalledApp {
+    public string Name, Id; public int Score;
+    public InstalledApp(string name,string id){Name=name;Id=id;Score=Recommend(name);}
+    static int Recommend(string name){string n=(name??"").ToLowerInvariant();string[] picks={"edge","chrome","firefox","spotify","discord","teams","slack","zoom","steam","xbox","obs","vlc","photos","calculator","notepad","visual studio code","paint","terminal","powertoys"};for(int i=0;i<picks.Length;i++)if(n.Contains(picks[i]))return 100-i;return 0;}
+}
+static class AppCatalog {
+    public static InstalledApp[] Load(){
+        var list=new System.Collections.Generic.List<InstalledApp>();
+        var seen=new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var psi=new ProcessStartInfo("powershell.exe","-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"Get-StartApps | Sort-Object Name | ForEach-Object { [Console]::WriteLine(($_.Name -replace '[\\r\\n\\t]',' ') + [char]9 + $_.AppID) }\""){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
+        using(var p=Process.Start(psi)){if(p==null)throw new IOException("Windows app search could not start.");string line;while((line=p.StandardOutput.ReadLine())!=null){int tab=line.IndexOf('\t');if(tab<1)continue;string name=line.Substring(0,tab).Trim(),id=line.Substring(tab+1).Trim();if(name.Length>0&&id.Length>0&&seen.Add(id))list.Add(new InstalledApp(name,id));}if(!p.WaitForExit(20000)){try{p.Kill();}catch{}throw new IOException("Windows app search took too long.");}if(p.ExitCode!=0)throw new IOException("Windows could not list installed apps.");}
+        return list.OrderByDescending(x=>x.Score).ThenBy(x=>x.Name,StringComparer.CurrentCultureIgnoreCase).ToArray();
+    }
 }
 public class DeckStore {
     public Entry[] Items = new Entry[15];
@@ -139,9 +153,26 @@ class EditDialog : Form {
         browse.Click+=(s,e)=>{using(var d=new OpenFileDialog{Filter="Apps and shortcuts|*.exe;*.lnk;*.url;*.appref-ms;*.bat;*.cmd|All files|*.*",DereferenceLinks=false}) if(d.ShowDialog(this)==DialogResult.OK){PathBox.Text=d.FileName;if(string.IsNullOrWhiteSpace(NameBox.Text))NameBox.Text=System.IO.Path.GetFileNameWithoutExtension(d.FileName);}};
         var save=Theme.Button("Save tile");save.BackColor=Theme.Accent;save.ForeColor=Theme.Background;save.SetBounds(350,172,120,38);Controls.Add(save);
         var cancel=Theme.Button("Cancel");cancel.SetBounds(220,172,115,38);cancel.DialogResult=DialogResult.Cancel;Controls.Add(cancel);CancelButton=cancel;AcceptButton=save;
-        save.Click+=(s,e)=>{string p=Environment.ExpandEnvironmentVariables(PathBox.Text.Trim().Trim('"'));if(string.IsNullOrWhiteSpace(NameBox.Text)||(!File.Exists(p)&&!Directory.Exists(p))){MessageBox.Show(this,"Enter a name and choose an existing app, shortcut, or folder.","Check app");return;} PathBox.Text=p;DialogResult=DialogResult.OK;};
+        save.Click+=(s,e)=>{string p=Environment.ExpandEnvironmentVariables(PathBox.Text.Trim().Trim('"'));if(string.IsNullOrWhiteSpace(NameBox.Text)||(!p.StartsWith("appx:",StringComparison.OrdinalIgnoreCase)&&!File.Exists(p)&&!Directory.Exists(p))){MessageBox.Show(this,"Enter a name and choose an existing app, shortcut, or folder.","Check app");return;} PathBox.Text=p;DialogResult=DialogResult.OK;};
         if(entry!=null){NameBox.Text=entry.Name;PathBox.Text=entry.Path;}
     }
+}
+class AppBrowser : Form {
+    TextBox search=new TextBox();ListView list=new ListView();Label summary=new Label();InstalledApp[] all;
+    public InstalledApp SelectedApp;
+    public AppBrowser(InstalledApp[] apps){
+        all=apps;Text="Choose an app";ClientSize=new Size(680,570);MinimumSize=new Size(520,430);StartPosition=FormStartPosition.CenterParent;BackColor=Theme.Background;ForeColor=Theme.Ink;Font=new Font("Segoe UI",10);
+        Controls.Add(new Label{Text="APPS ON THIS PC",Font=new Font("Segoe UI",18,FontStyle.Bold),Location=new Point(20,18),AutoSize=true});
+        Controls.Add(new Label{Text="Microsoft Store and desktop apps registered with Windows",ForeColor=Theme.Muted,Location=new Point(22,55),AutoSize=true});
+        search.SetBounds(20,88,640,32);search.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;Controls.Add(search);search.TextChanged+=(s,e)=>Fill();
+        summary.SetBounds(20,130,640,24);summary.ForeColor=Theme.Muted;summary.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;Controls.Add(summary);
+        list.SetBounds(20,158,640,348);list.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right;list.View=View.Details;list.FullRowSelect=true;list.HideSelection=false;list.MultiSelect=false;list.BackColor=Theme.Card;list.ForeColor=Theme.Ink;list.BorderStyle=BorderStyle.FixedSingle;list.Columns.Add("App",430);list.Columns.Add("Suggestion",170);Controls.Add(list);
+        var add=Theme.Button("Add to deck");add.SetBounds(530,518,130,38);add.Anchor=AnchorStyles.Bottom|AnchorStyles.Right;add.BackColor=Theme.Accent;add.ForeColor=Theme.Background;Controls.Add(add);
+        var cancel=Theme.Button("Cancel");cancel.SetBounds(410,518,110,38);cancel.Anchor=AnchorStyles.Bottom|AnchorStyles.Right;cancel.DialogResult=DialogResult.Cancel;Controls.Add(cancel);CancelButton=cancel;
+        add.Click+=(s,e)=>Choose();list.DoubleClick+=(s,e)=>Choose();search.KeyDown+=(s,e)=>{if(e.KeyCode==Keys.Down&&list.Items.Count>0){list.Focus();list.Items[0].Selected=true;}};Fill();search.Focus();
+    }
+    void Fill(){string q=search.Text.Trim();list.BeginUpdate();list.Items.Clear();foreach(var app in all.Where(x=>q.Length==0||x.Name.IndexOf(q,StringComparison.CurrentCultureIgnoreCase)>=0)){var item=new ListViewItem(app.Name);item.SubItems.Add(app.Score>0?"Recommended":"Installed");item.Tag=app;list.Items.Add(item);}list.EndUpdate();int suggested=all.Count(x=>x.Score>0);summary.Text=(q.Length==0&&suggested>0?suggested+" recommendations · ":"")+list.Items.Count+" apps found";if(list.Items.Count>0)list.Items[0].Selected=true;}
+    void Choose(){if(list.SelectedItems.Count==0)return;SelectedApp=(InstalledApp)list.SelectedItems[0].Tag;DialogResult=DialogResult.OK;}
 }
 public class MainForm : Form {
     DeckStore store; Tile[] tiles=new Tile[15]; TableLayoutPanel grid=new TableLayoutPanel(); Label status=new Label(),count=new Label(); ToolTip tips=new ToolTip(); bool canSave=true;
@@ -156,8 +187,9 @@ public class MainForm : Form {
         var header=new Panel{Dock=DockStyle.Fill};root.Controls.Add(header,0,0);
         header.Controls.Add(new Label{Text="LAUNCHDECK",Font=new Font("Segoe UI",21,FontStyle.Bold),Location=new Point(0,0),AutoSize=true});
         header.Controls.Add(new Label{Text="Your apps. One click away.",ForeColor=Theme.Muted,Location=new Point(2,44),AutoSize=true});
-        var add=Theme.Button("+  Add app");add.Size=new Size(124,40);add.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(add);add.Location=new Point(header.ClientSize.Width-124,10);add.Click+=(s,e)=>{int i=Array.FindIndex(store.Items,x=>x==null);if(i<0){SetStatus("Your deck is full. Right-click a tile to edit or remove it.");return;}Edit(i);};
-        var update=Theme.Button("Check for updates");update.Size=new Size(150,40);update.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(update);update.Location=new Point(header.ClientSize.Width-286,10);update.Click+=(s,e)=>Updater.Check(this,SetStatus,true);
+        var add=Theme.Button("+  Browse apps");add.Size=new Size(134,40);add.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(add);add.Location=new Point(header.ClientSize.Width-134,10);add.Click+=(s,e)=>BrowseApps();
+        var file=Theme.Button("Choose file");file.Size=new Size(112,40);file.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(file);file.Location=new Point(header.ClientSize.Width-258,10);file.Click+=(s,e)=>{int i=EmptySlot();if(i>=0)Edit(i);};
+        var update=Theme.Button("Updates");update.Size=new Size(94,40);update.Anchor=AnchorStyles.Top|AnchorStyles.Right;header.Controls.Add(update);update.Location=new Point(header.ClientSize.Width-364,10);update.Click+=(s,e)=>Updater.Check(this,SetStatus,true);
         var version=new Label{Text="v"+Updater.Version,ForeColor=Theme.Muted,AutoSize=true};version.Location=new Point(222,11);header.Controls.Add(version);
         var sub=new Panel{Dock=DockStyle.Fill};root.Controls.Add(sub,0,1);sub.Controls.Add(new Label{Text="MY DECK",Font=new Font("Segoe UI",10,FontStyle.Bold),AutoSize=true,Location=new Point(0,7)});count.ForeColor=Theme.Muted;count.AutoSize=true;count.Location=new Point(105,7);sub.Controls.Add(count);
         grid.Dock=DockStyle.Fill;grid.ColumnCount=5;grid.RowCount=3;grid.Margin=Padding.Empty;
@@ -179,8 +211,11 @@ public class MainForm : Form {
         var b=Theme.Button(name+"  ↗\n"+desc);b.Dock=DockStyle.Fill;b.Margin=new Padding(0,0,10,12);b.TextAlign=ContentAlignment.MiddleLeft;b.Padding=new Padding(12,0,0,0);b.FlatAppearance.BorderColor=Theme.Border;b.AccessibleName=name;b.Click+=(s,e)=>{try{Process.Start(new ProcessStartInfo(target){UseShellExecute=true});SetStatus(target.StartsWith("shell:")?"For Store apps: right-click an app, create a desktop shortcut, then drag it here.":"Download from the publisher, install, then drag its shortcut onto your deck.");}catch(Exception ex){MessageBox.Show(this,ex.Message,"Could not open");}};panel.Controls.Add(b,column,1);
     }
     void SetStatus(string text){status.Text=text;}
+    int EmptySlot(){int i=Array.FindIndex(store.Items,x=>x==null);if(i<0)SetStatus("Your deck is full. Right-click a tile to edit or remove it.");return i;}
+    void BrowseApps(){int slot=EmptySlot();if(slot<0)return;SetStatus("Searching apps registered with Windows...");ThreadPool.QueueUserWorkItem(delegate{try{var apps=AppCatalog.Load();BeginInvoke((Action)(()=>{using(var d=new AppBrowser(apps))if(d.ShowDialog(this)==DialogResult.OK){store.Items[slot]=new Entry(d.SelectedApp.Name,"appx:"+d.SelectedApp.Id);Persist(d.SelectedApp.Name+" added to your deck.");}else SetStatus("App search closed.");}));}catch(Exception ex){BeginInvoke((Action)(()=>{SetStatus("App search failed.");MessageBox.Show(this,ex.Message+"\n\nYou can still use Choose file for normal programs and shortcuts.","Could not search apps");}));}});}
     void Edit(int slot){using(var d=new EditDialog(store.Items[slot]))if(d.ShowDialog(this)==DialogResult.OK){store.Items[slot]=new Entry(d.NameBox.Text.Trim(),d.PathBox.Text);Persist("App saved. Click its tile to launch.");}}
     public static ProcessStartInfo LaunchInfo(Entry entry){
+        if(entry.Path.StartsWith("appx:",StringComparison.OrdinalIgnoreCase))return new ProcessStartInfo("explorer.exe","shell:AppsFolder\\"+entry.Path.Substring(5)){UseShellExecute=true};
         if(!File.Exists(entry.Path)&&!Directory.Exists(entry.Path))throw new FileNotFoundException("This app or shortcut has moved. Right-click the tile and choose Edit to locate it.",entry.Path);
         return new ProcessStartInfo(entry.Path){UseShellExecute=true,WorkingDirectory=Directory.Exists(entry.Path)?entry.Path:System.IO.Path.GetDirectoryName(entry.Path)};
     }
@@ -202,7 +237,9 @@ static class Program {
         Directory.CreateDirectory(directory);string path=System.IO.Path.Combine(directory,"test-deck.xml");
         try{
             var s=new DeckStore(path);string exe=Application.ExecutablePath;
-            if(!Updater.IsNewer("v1.0.1")||Updater.IsNewer("v1.0.0")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
+            if(!Updater.IsNewer("v1.1.1")||Updater.IsNewer("v1.1.0")||Updater.IsNewer("garbage"))throw new Exception("Version comparison failed");
+            var appx=MainForm.LaunchInfo(new Entry("Store app","appx:Example.Package!App"));if(appx.FileName!="explorer.exe"||!appx.Arguments.Contains("Example.Package!App"))throw new Exception("Store app launch configuration failed");
+            if(AppCatalog.Load().Length==0)throw new Exception("Installed app discovery failed");
             if(s.AddFiles(new[]{exe,exe},0)!=2)throw new Exception("Multi-file add failed");
             s.Swap(0,14);s.Items[14].Name="Example & app";s.Save();var loaded=new DeckStore(path);loaded.Load();
             if(loaded.Items[0]!=null||loaded.Items[14].Name!="Example & app"||loaded.Items[1].Path!=exe)throw new Exception("Persistence/reorder failed");
