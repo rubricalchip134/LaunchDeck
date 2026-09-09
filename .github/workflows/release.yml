@@ -1,0 +1,23 @@
+name: Release LaunchDeck
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and checksum
+        shell: powershell
+        run: ./src/release.ps1
+      - name: Publish GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" LaunchDeck.exe LaunchDeck.exe.sha256 --generate-notes --verify-tag
